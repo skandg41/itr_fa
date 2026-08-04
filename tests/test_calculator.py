@@ -8,6 +8,7 @@ from core.calculator import (
     calculate_current_balance,
     compute_offset_summary,
     calculate_dividends,
+    _get_cy_quarter_key,
 )
 
 @pytest.mark.unit
@@ -333,4 +334,45 @@ def test_compute_offset_summary_quarters():
     # LTCL of 20 in Q4 sets off Q1 LTCG of 30 (leaves 10 LTCG).
     assert offset_curr["net_ltcg_quarters"]["q1"] == 10
     assert offset_curr["net_ltcg_quarters"]["total"] == 10
+
+@pytest.mark.unit
+def test_get_cy_quarter_key():
+    assert _get_cy_quarter_key(date(2024, 2, 10)) == "q1"
+    assert _get_cy_quarter_key(date(2024, 8, 20)) == "q3"
+    assert _get_cy_quarter_key(date(2024, 5, 1)) == "q2"
+    assert _get_cy_quarter_key(date(2024, 12, 31)) == "q4"
+
+@pytest.mark.unit
+def test_calculate_tax_year_summary_cy_mode_single_bucket(sbi_cache, sample_portfolio, full_2024_sbi_rates, monkeypatch):
+    """CY mode combines Jan-Mar and Apr-Dec sells of the same calendar year into one 'cy' bucket."""
+    sbi_cache(full_2024_sbi_rates)
+    monkeypatch.setattr("core.calculator.get_historical_prices", lambda ticker, start, end: [{"date": "2024-01-15", "close": 150.0}])
+
+    res = calculate_tax_year_summary(sample_portfolio, year_basis="cy")
+    assert "cy" in res["tax_years"]
+    assert "prev" not in res["tax_years"]
+    assert "curr" not in res["tax_years"]
+
+    cy = res["tax_years"]["cy"]
+    # AAPL and TSLA sells (10/05/2024, 15/07/2024) both land in the same "cy"
+    # bucket instead of being split across "prev"/"curr" FY buckets.
+    assert cy["totals"]["ltcg"]["total"] > 0
+    assert cy["totals"]["dividends"]["total"] > 0
+
+@pytest.mark.unit
+def test_compute_offset_summary_cy_bucket():
+    tax_years = {
+        "cy": {
+            "totals": {
+                "stcg": {"total": 100, "q1": 100, "q2": 0, "q3": 0, "q4": 0, "q5": 0},
+                "stcl": {"total": 0, "q1": 0, "q2": 0, "q3": 0, "q4": 0, "q5": 0},
+                "ltcg": {"total": 50, "q1": 0, "q2": 50, "q3": 0, "q4": 0, "q5": 0},
+                "ltcl": {"total": 0, "q1": 0, "q2": 0, "q3": 0, "q4": 0, "q5": 0},
+            }
+        }
+    }
+    res = compute_offset_summary(tax_years)
+    assert "offset" in res["cy"]
+    assert res["cy"]["offset"]["net_stcg"] == 100
+    assert res["cy"]["offset"]["net_ltcg"] == 50
 

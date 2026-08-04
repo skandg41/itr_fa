@@ -265,6 +265,36 @@ export function restoreSbiTTMode() {
     }
 }
 
+export function setYearBasis(basis, skipSave = false) {
+    state.year_basis = basis;
+    try { localStorage.setItem("fa_desk_year_basis", basis); } catch(e) {}
+
+    document.querySelectorAll(".year-basis-option").forEach(btn => {
+        const isActive = btn.dataset.basis === basis;
+        btn.classList.toggle("active", isActive);
+    });
+
+    document.dispatchEvent(new CustomEvent("year-basis-change", { detail: { basis } }));
+
+    if (!skipSave) {
+        apiPost("/api/settings", { year_basis: basis }).catch(e => console.error("Failed to save year basis to settings", e));
+    }
+}
+
+export function restoreYearBasis() {
+    try {
+        const backendBasis = document.documentElement.dataset.yearBasis;
+        if (backendBasis && backendBasis !== "{{ year_basis }}") {
+            setYearBasis(backendBasis, true);
+            return;
+        }
+        const saved = localStorage.getItem("fa_desk_year_basis");
+        setYearBasis(saved || "fy", true);
+    } catch(e) {
+        setYearBasis("fy", true);
+    }
+}
+
 export function toggleTheme() {
     const root = document.documentElement;
     const current = root.dataset.theme || "dark";

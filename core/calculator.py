@@ -692,6 +692,27 @@ def _get_quarter_key(event_date: date, tax_year_key: str) -> str:
         return "q4"
 
 
+def _get_cy_quarter_key(event_date: date) -> str:
+    """
+    Map an event date to a plain calendar quarter bucket for calendar-year (CY)
+    mode reporting. Reuses the q1-q4 slot names from _get_quarter_key (q5 is
+    unused, always 0) so downstream quarter infra needs no structural changes.
+
+        q1 : Jan 01 – Mar 31
+        q2 : Apr 01 – Jun 30
+        q3 : Jul 01 – Sep 30
+        q4 : Oct 01 – Dec 31
+    """
+    m = event_date.month
+    if m <= 3:
+        return "q1"
+    if m <= 6:
+        return "q2"
+    if m <= 9:
+        return "q3"
+    return "q4"
+
+
 def _empty_quarters() -> dict:
     return {
         "q1": 0.0, "q2": 0.0, "q3": 0.0, "q4": 0.0, "q5": 0.0, "total": 0.0,
@@ -906,7 +927,7 @@ def compute_offset_summary(tax_years: dict) -> dict:
       "ltcl_carry_forward": int,    # LTCL not absorbed anywhere this year
     }
     """
-    for ty_key in ("prev", "curr"):
+    for ty_key in tax_years.keys():
         ty = tax_years[ty_key]
         totals = ty["totals"]
 
@@ -1036,10 +1057,11 @@ def compute_offset_summary(tax_years: dict) -> dict:
     return tax_years
 
 
-def calculate_tax_year_summary(portfolio: dict, mode: str = 'split') -> dict:
+def calculate_tax_year_summary(portfolio: dict, mode: str = 'split', year_basis: str = 'fy') -> dict:
     """
     Calculate a per-stock, per-quarter LTCG/LTCL/STCG/STCL and Dividend breakdown
-    mapped to the two applicable Indian tax years.
+    mapped either to the two applicable Indian tax years (year_basis='fy', default)
+    or to a single plain calendar year bucket (year_basis='cy').
     ...
     """
     calendar_year = portfolio.get("calendar_year", 2024)
@@ -1047,33 +1069,54 @@ def calculate_tax_year_summary(portfolio: dict, mode: str = 'split') -> dict:
     logged_errors = set()
     errors = []
 
-    prev_cy = calendar_year - 1
-    curr_cy = calendar_year
+    if year_basis == 'cy':
+        tax_years = {
+            "cy": {
+                "label": f"Jan {calendar_year} – Dec {calendar_year}",
+                "stocks": {},
+                "totals": _make_stock_entry(),
+                "total_proceeds_inr": 0.0,
+                "total_cost_acquisition_inr": 0.0,
+                "st_proceeds_inr": 0.0,
+                "st_cost_inr": 0.0,
+                "lt_proceeds_inr": 0.0,
+                "lt_cost_inr": 0.0,
+            },
+        }
+    else:
+        prev_cy = calendar_year - 1
+        curr_cy = calendar_year
 
-    tax_years = {
-        "prev": {
-            "label": f"Apr {prev_cy} – Mar {calendar_year}",
-            "stocks": {},
-            "totals": _make_stock_entry(),
-            "total_proceeds_inr": 0.0,
-            "total_cost_acquisition_inr": 0.0,
-            "st_proceeds_inr": 0.0,
-            "st_cost_inr": 0.0,
-            "lt_proceeds_inr": 0.0,
-            "lt_cost_inr": 0.0,
-        },
-        "curr": {
-            "label": f"Apr {calendar_year} – Mar {calendar_year + 1}",
-            "stocks": {},
-            "totals": _make_stock_entry(),
-            "total_proceeds_inr": 0.0,
-            "total_cost_acquisition_inr": 0.0,
-            "st_proceeds_inr": 0.0,
-            "st_cost_inr": 0.0,
-            "lt_proceeds_inr": 0.0,
-            "lt_cost_inr": 0.0,
-        },
-    }
+        tax_years = {
+            "prev": {
+                "label": f"Apr {prev_cy} – Mar {calendar_year}",
+                "stocks": {},
+                "totals": _make_stock_entry(),
+                "total_proceeds_inr": 0.0,
+                "total_cost_acquisition_inr": 0.0,
+                "st_proceeds_inr": 0.0,
+                "st_cost_inr": 0.0,
+                "lt_proceeds_inr": 0.0,
+                "lt_cost_inr": 0.0,
+            },
+            "curr": {
+                "label": f"Apr {calendar_year} – Mar {calendar_year + 1}",
+                "stocks": {},
+                "totals": _make_stock_entry(),
+                "total_proceeds_inr": 0.0,
+                "total_cost_acquisition_inr": 0.0,
+                "st_proceeds_inr": 0.0,
+                "st_cost_inr": 0.0,
+                "lt_proceeds_inr": 0.0,
+                "lt_cost_inr": 0.0,
+            },
+        }
+
+    def _route(event_date: date):
+        if year_basis == 'cy':
+            return "cy", _get_cy_quarter_key(event_date)
+        ty_key = _get_tax_year_key(event_date, calendar_year)
+        return ty_key, _get_quarter_key(event_date, ty_key)
 
     def _get_ty(ty_key: str) -> dict:
         return tax_years[ty_key]
@@ -1157,8 +1200,7 @@ def calculate_tax_year_summary(portfolio: dict, mode: str = 'split') -> dict:
                 gain_inr = (sell_inr_per_share - buy_rate_inr_per_share) * sell_qty
 
                 # Map to tax year and quarter
-                ty_key = _get_tax_year_key(sell_date, calendar_year)
-                qkey = _get_quarter_key(sell_date, ty_key)
+                ty_key, qkey = _route(sell_date)
 
                 detail = {
                     "lot_id": lot.get("id"),
@@ -1230,8 +1272,7 @@ def calculate_tax_year_summary(portfolio: dict, mode: str = 'split') -> dict:
                 # Qualification was on Ex-Date (already checked above)
                 # Tax Year Placement & Rule 115 Conversion: Use Payment Date
                 # Use Payment Date for tax year key and Rule 115 rate
-                ty_key = _get_tax_year_key(pay_date, calendar_year)
-                qkey = _get_quarter_key(pay_date, ty_key)
+                ty_key, qkey = _route(pay_date)
 
                 # Rate for Tax Summary (Rule 115: Last day of prev month)
                 rate, rate_date, source, is_lookback, error = _get_rate_value(pay_date, sbi_overrides, use_event_date=False, mode=mode)
@@ -1266,7 +1307,7 @@ def calculate_tax_year_summary(portfolio: dict, mode: str = 'split') -> dict:
                 _add_to_quarter(ty["totals"]["dividends"], qkey, div_inr, detail)
 
     # Round all values
-    for ty_key in ("prev", "curr"):
+    for ty_key in tax_years.keys():
         ty = tax_years[ty_key]
         for category in ("ltcg", "ltcl", "stcg", "stcl", "dividends"):
             ty["totals"][category] = _round_quarters(ty["totals"][category])

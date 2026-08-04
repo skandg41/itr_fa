@@ -147,3 +147,20 @@
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
+/* Report Year Basis Toggles */
+.year-basis-option {
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid transparent;
+}
+.year-basis-option:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+}
+.year-basis-option.active {
+    background: var(--bg-main);
+    color: var(--accent);
+    border-color: var(--border);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+

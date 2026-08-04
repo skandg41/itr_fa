@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="{{ theme }}" data-sbi-mode="{{ sbi_tt_mode }}">
+<html lang="en" data-theme="{{ theme }}" data-sbi-mode="{{ sbi_tt_mode }}" data-year-basis="{{ year_basis }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -119,6 +119,17 @@
                             </a>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <!-- Report Year Basis Selector -->
+            <div class="year-basis-selector" style="display: flex; align-items: center; margin-right: 20px; background: var(--bg-secondary); padding: 4px; border-radius: 10px; border: 1px solid var(--border); box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);">
+                <div style="display: flex; align-items: center; gap: 4px; margin: 0 8px 0 12px;">
+                    <span style="font-size: 0.72rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap;">Report Year Basis</span>
+                </div>
+                <div style="display: flex; gap: 4px;">
+                    <button class="btn btn-sm year-basis-option" data-basis="fy" title="Financial Year: Apr – Mar (Indian tax year)" style="padding: 5px 12px; font-size: 0.75rem; border-radius: 7px; font-weight: 600;">FY</button>
+                    <button class="btn btn-sm year-basis-option" data-basis="cy" title="Calendar Year: Jan – Dec" style="padding: 5px 12px; font-size: 0.75rem; border-radius: 7px; font-weight: 600;">CY</button>
                 </div>
             </div>
 
