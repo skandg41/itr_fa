@@ -94,3 +94,39 @@ def test_consolidated_tax_summary(client, sample_portfolio, full_2024_sbi_rates,
     assert "net_ltcg_quarters" in offset
     assert offset["net_stcg_quarters"]["total"] == offset["net_stcg"]
     assert offset["net_ltcg_quarters"]["total"] == offset["net_ltcg"]
+
+@pytest.mark.unit
+def test_tax_year_summary_cy_mode(client, sample_portfolio, full_2024_sbi_rates, sbi_cache):
+    sbi_cache(full_2024_sbi_rates)
+    res = client.post("/api/tax-year-summary", json={**sample_portfolio, "year_basis": "cy"})
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["success"] is True
+    assert "cy" in data["tax_years"]
+    assert "prev" not in data["tax_years"]
+    assert "curr" not in data["tax_years"]
+
+@pytest.mark.unit
+def test_consolidated_tax_summary_cy_mode(client, sample_portfolio, full_2024_sbi_rates, sbi_cache):
+    sbi_cache(full_2024_sbi_rates)
+
+    sample_portfolio["calendar_year"] = 2024
+    client.post("/api/save?username=CYUser", json=sample_portfolio)
+
+    res = client.post("/api/consolidated-tax-summary", json={
+        "fy_start_year": 2024,
+        "username": "CYUser",
+        "year_basis": "cy"
+    })
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["success"] is True
+    consolidated = data["consolidated"]
+    assert consolidated["fy_start_year"] == 2024
+    assert consolidated["fy_end_year"] == 2024
+    assert consolidated["has_cy_start"] is True
+    assert consolidated["has_cy_end"] is True
+
+    offset = consolidated["offset"]
+    assert "net_stcg" in offset
+    assert "net_ltcg" in offset

@@ -318,7 +318,7 @@ def get_yearly_max_price(ticker: str, year: int) -> dict:
     logger.info(f"Fetching yearly max price for {yahoo_ticker} in {year}")
     try:
         t = _get_yf().Ticker(yahoo_ticker)
-        hist = t.history(start=f"{year}-01-01", end=f"{year + 1}-01-01", auto_adjust=False)
+        hist = t.history(start=f"{year}-01-01", end=f"{year}-12-31", auto_adjust=False)
 
         if hist.empty:
             res = {"max_price": None, "max_price_date": None}

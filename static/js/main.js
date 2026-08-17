@@ -76,7 +76,9 @@ import {
     restoreDensity, 
     setSbiTTMode,
     restoreSbiTTMode,
-    autoSaveDraft, 
+    setYearBasis,
+    restoreYearBasis,
+    autoSaveDraft,
     checkForDraft, 
     clearDraft,
     renderAssetPieChart,
@@ -2150,7 +2152,7 @@ function performGlobalSearch(query) {
 
     // 4. Search in Tax Statement
     if (state.taxYears) {
-        ["prev", "curr"].forEach(tyKey => {
+        Object.keys(state.taxYears).forEach(tyKey => {
             const ty = state.taxYears[tyKey];
             Object.keys(ty.stocks).forEach(ticker => {
                 if (ticker.toLowerCase().includes(q)) {
@@ -3251,6 +3253,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     restoreTheme();
     restoreDensity();
     restoreSbiTTMode();
+    restoreYearBasis();
     addYearChangeGuard();
 
     // SBI TT Mode Toggles
@@ -3266,7 +3269,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
             setSbiTTMode(mode);
             showToast(`SBI TT Mode set to: ${mode === 'split' ? 'Split' : 'Uniform'}`, "info");
-            
+
             // Highlight that re-calculation is needed without marking portfolio as dirty
             const calcFab = document.getElementById("calcFab");
             if (calcFab) {
@@ -3274,6 +3277,25 @@ document.addEventListener("DOMContentLoaded", async () => {
                 setTimeout(() => calcFab.classList.remove("highlight-pulse"), 5000);
             }
         });
+    });
+
+    // Year Basis Toggles (FY vs CY reporting)
+    document.querySelectorAll(".year-basis-option").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const basis = btn.dataset.basis;
+            if (state.year_basis === basis) return;
+
+            setYearBasis(basis);
+            showToast(`Report Year Basis set to: ${basis === 'cy' ? 'Calendar Year (Jan–Dec)' : 'Financial Year (Apr–Mar)'}`, "info");
+        });
+    });
+
+    document.addEventListener("year-basis-change", () => {
+        initFYYearSelector();
+        const taxYearSection = document.getElementById("taxYearSection");
+        if (taxYearSection && !taxYearSection.classList.contains("hidden")) {
+            fetchTaxYearSummary();
+        }
     });
 
     // SBI Reference Docs Dropdown

@@ -15,6 +15,16 @@ let _navSource = null;
 let _backToSourceTimeout = null;
 
 /**
+ * Returns quarter labels/keys for either FY (5 quarters, advance-tax install dates)
+ * or CY (4 plain calendar quarters) reporting mode.
+ */
+function getQuarterDisplayConfig(isCY) {
+    return isCY
+        ? { labels: { q1: "Jan – Mar", q2: "Apr – Jun", q3: "Jul – Sep", q4: "Oct – Dec" }, keys: ["q1", "q2", "q3", "q4"] }
+        : { labels: { q1: "Up to 15/6", q2: "16/6 – 15/9", q3: "16/9 – 15/12", q4: "16/12 – 15/3", q5: "16/3 – 31/3" }, keys: ["q1", "q2", "q3", "q4", "q5"] };
+}
+
+/**
  * Highlight a source element and show a "Back to source" pill.
  */
 export function showBackToSource(sourceEl, label) {
@@ -440,10 +450,10 @@ export function renderTaxValidationTable(taxYears) {
     const categories = ["ltcg", "ltcl", "stcg", "stcl", "dividends"];
     const quarters = ["q1", "q2", "q3", "q4", "q5"];
 
-    ["prev", "curr"].forEach(tyKey => {
+    Object.keys(taxYears).forEach(tyKey => {
         const ty = taxYears[tyKey];
         const tyLabel = ty.label;
-        
+
         Object.keys(ty.stocks).forEach(ticker => {
             const stockData = ty.stocks[ticker];
             categories.forEach(cat => {
@@ -854,7 +864,7 @@ export async function collectSbiRates(rows, taxYears = null) {
 
     // 2. From Tax Year Summary (taxYears)
     if (taxYears) {
-        ["prev", "curr"].forEach(tyKey => {
+        Object.keys(taxYears).forEach(tyKey => {
             const ty = taxYears[tyKey];
             Object.keys(ty.stocks).forEach(ticker => {
                 const stockData = ty.stocks[ticker];
@@ -1243,7 +1253,7 @@ export async function loadMonthlyRates() {
 // ===== ITR Tax Year Capital Gains & Dividend Summary =====
 export async function fetchTaxYearSummary() {
     try {
-        const payload = { ...state.portfolio, sbi_tt_mode: state.sbi_tt_mode };
+        const payload = { ...state.portfolio, sbi_tt_mode: state.sbi_tt_mode, year_basis: state.year_basis };
         const result = await apiPost("/api/tax-year-summary", payload);
         if (result.success && result.tax_years) {
             if (result.errors && result.errors.length > 0) {
@@ -1461,14 +1471,7 @@ export function renderTaxYearSummary(taxYears) {
     const container = document.getElementById("taxYearBlocks");
     container.innerHTML = "";
 
-    const quarterLabels = {
-        q1: "Up to 15/6",
-        q2: "16/6 – 15/9",
-        q3: "16/9 – 15/12",
-        q4: "16/12 – 15/3",
-        q5: "16/3 – 31/3",
-    };
-    const quarters = ["q1", "q2", "q3", "q4", "q5"];
+    const { labels: quarterLabels, keys: quarters } = getQuarterDisplayConfig(state.year_basis === 'cy');
 
     const categoryMeta = {
         ltcg:      { label: "LTCG", color: "#10b981", title: "Long-Term Capital Gain (held ≥ 2 yrs)" },
@@ -1479,7 +1482,7 @@ export function renderTaxYearSummary(taxYears) {
     };
     const categoryOrder = ["ltcg", "ltcl", "stcg", "stcl", "dividends"];
 
-    ["prev", "curr"].forEach(tyKey => {
+    Object.keys(taxYears).forEach(tyKey => {
         const ty = taxYears[tyKey];
         const hasData = Object.values(ty.totals).some(b => b.total > 0);
 
@@ -1548,7 +1551,7 @@ export function renderTaxYearSummary(taxYears) {
             const sHeaderRow = document.createElement("tr");
             sHeaderRow.dataset.ticker = ticker;
             const sHeaderTd = document.createElement("td");
-            sHeaderTd.colSpan = 7;
+            sHeaderTd.colSpan = quarters.length + 2;
             sHeaderTd.style.cssText = [
                 "padding:10px 10px 4px;",
                 "font-weight:700;color:var(--text-main);font-size:0.88rem;",
@@ -1624,7 +1627,7 @@ export function renderTaxYearSummary(taxYears) {
         // Separator + Grand totals
         const sepRow = document.createElement("tr");
         const sepTd = document.createElement("td");
-        sepTd.colSpan = 7;
+        sepTd.colSpan = quarters.length + 2;
         sepTd.style.cssText = "padding:0;border-top:2px solid var(--accent);";
         sepRow.appendChild(sepTd);
         tbody.appendChild(sepRow);
@@ -1795,11 +1798,14 @@ export function initFYYearSelector() {
     const select = document.getElementById("fyYearSelect");
     if (!select) return;
     select.innerHTML = "";
+    const isCY = state.year_basis === 'cy';
     const currentYear = new Date().getFullYear();
     for (let y = currentYear; y >= 2024; y--) {
         const opt = document.createElement("option");
         opt.value = y;
-        opt.textContent = `TY ${y}-${String(y + 1).slice(-2)} (Apr ${y} – Mar ${y + 1})`;
+        opt.textContent = isCY
+            ? `CY ${y} (Jan – Dec ${y})`
+            : `TY ${y}-${String(y + 1).slice(-2)} (Apr ${y} – Mar ${y + 1})`;
         if (y === state.portfolio.calendar_year) opt.selected = true;
         select.appendChild(opt);
     }
@@ -1809,13 +1815,17 @@ export function initFYYearSelector() {
 export async function fetchConsolidatedTaxSummary() {
     const fyStart = parseInt(document.getElementById("fyYearSelect").value);
     if (!fyStart || !state.username) return showToast("Select a tax year", "warning");
-    showLoading(`Generating consolidated statement for TY ${fyStart}-${String(fyStart + 1).slice(-2)}…`);
+    const isCY = state.year_basis === 'cy';
+    showLoading(isCY
+        ? `Generating consolidated statement for CY ${fyStart}…`
+        : `Generating consolidated statement for TY ${fyStart}-${String(fyStart + 1).slice(-2)}…`);
     try {
         const result = await apiPost("/api/consolidated-tax-summary", {
-            fy_start_year: fyStart, 
+            fy_start_year: fyStart,
             username: state.username,
             current_portfolio: state.portfolio,
-            sbi_tt_mode: state.sbi_tt_mode
+            sbi_tt_mode: state.sbi_tt_mode,
+            year_basis: state.year_basis
         });
         await hideLoading();
         if (!result.success) return showToast(result.error || "Failed", "error");
@@ -1848,19 +1858,22 @@ export function renderConsolidatedTaxSummary(data) {
     window._fsiTaxPaidOverrides = {};
     window._fsiDTAAArticles = {};
 
+    const isCY = state.year_basis === 'cy';
+
     const container = document.getElementById("consolidatedFYBlocks");
     container.innerHTML = "";
 
     const sourceDiv = document.createElement("div");
     sourceDiv.style.cssText = "margin-bottom:16px;";
-    sourceDiv.innerHTML = `
+    sourceDiv.innerHTML = isCY
+        ? `<span class="fy-source-note ${data.has_cy_start ? 'available' : 'missing'}">${data.has_cy_start ? '✓' : '⚠'} CY${data.fy_start_year} ${data.has_cy_start ? 'loaded' : 'missing (treated as 0)'}</span>`
+        : `
         <span class="fy-source-note ${data.has_cy_start ? 'available' : 'missing'}">${data.has_cy_start ? '✓' : '⚠'} CY${data.fy_start_year} ${data.has_cy_start ? 'loaded' : 'missing (treated as 0)'}</span>
         <span class="fy-source-note ${data.has_cy_end ? 'available' : 'missing'}">${data.has_cy_end ? '✓' : '⚠'} CY${data.fy_end_year} ${data.has_cy_end ? 'loaded' : 'missing (treated as 0)'}</span>
     `;
     container.appendChild(sourceDiv);
 
-    const quarterLabels = { q1: "Up to 15/6", q2: "16/6 – 15/9", q3: "16/9 – 15/12", q4: "16/12 – 15/3", q5: "16/3 – 31/3" };
-    const quarters = ["q1", "q2", "q3", "q4", "q5"];
+    const { labels: quarterLabels, keys: quarters } = getQuarterDisplayConfig(isCY);
     const categoryMeta = {
         ltcg: { label: "LTCG", color: "#10b981", title: "Long-Term Capital Gain" },
         ltcl: { label: "LTCL", color: "#ef4444", title: "Long-Term Capital Loss" },
@@ -1908,7 +1921,7 @@ export function renderConsolidatedTaxSummary(data) {
         const stockData = ty.stocks[ticker];
         const sHeaderRow = document.createElement("tr");
         const sHeaderTd = document.createElement("td");
-        sHeaderTd.colSpan = 7;
+        sHeaderTd.colSpan = quarters.length + 2;
         sHeaderTd.style.cssText = `padding:10px 10px 4px;font-weight:700;color:var(--text-main);font-size:0.88rem;border-top:${sIdx > 0 ? "2px solid var(--border)" : "none"};`;
         sHeaderTd.innerHTML = `<span style="opacity:0.4;margin-right:6px;">◆</span>${ticker}`;
         sHeaderRow.appendChild(sHeaderTd);
@@ -1939,7 +1952,7 @@ export function renderConsolidatedTaxSummary(data) {
 
     const sepRow = document.createElement("tr");
     const sepTd = document.createElement("td");
-    sepTd.colSpan = 7;
+    sepTd.colSpan = quarters.length + 2;
     sepTd.style.cssText = "padding:0;border-top:2px solid var(--accent);";
     sepRow.appendChild(sepTd);
     tbody.appendChild(sepRow);
@@ -2031,8 +2044,10 @@ export function renderConsolidatedTaxSummary(data) {
 
         block.appendChild(offCard);
 
-        // Estimated Advance Tax Installment Schedule (right after net CG)
-        renderAdvanceTaxSchedule(block, data.offset, "", null);
+        // Estimated Advance Tax Installment Schedule (right after net CG) — no CY equivalent
+        if (!isCY) {
+            renderAdvanceTaxSchedule(block, data.offset, "", null);
+        }
     }
 
     // ITR Schedule CG Summaries — Short Term (A(I)5) & Long Term (B(I)8)
@@ -2132,17 +2147,14 @@ export function renderConsolidatedTaxSummary(data) {
 
         const thead = document.createElement("thead");
         const hrow = document.createElement("tr");
-        
-        const headers = [
-            "Type of Capital Gain",
-            "Upto 15/6 (i)",
-            "16/6 – 15/9 (ii)",
-            "16/9 – 15/12 (iii)",
-            "16/12 – 15/3 (iv)",
-            "16/3 – 31/3 (v)",
-            "Total"
-        ];
-        
+
+        const fQuarterLabels = isCY
+            ? { q1: "Jan – Mar (i)", q2: "Apr – Jun (ii)", q3: "Jul – Sep (iii)", q4: "Oct – Dec (iv)" }
+            : { q1: "Upto 15/6 (i)", q2: "16/6 – 15/9 (ii)", q3: "16/9 – 15/12 (iii)", q4: "16/12 – 15/3 (iv)", q5: "16/3 – 31/3 (v)" };
+        const fQuarterKeys = isCY ? ["q1", "q2", "q3", "q4"] : ["q1", "q2", "q3", "q4", "q5"];
+
+        const headers = ["Type of Capital Gain"].concat(fQuarterKeys.map(q => fQuarterLabels[q])).concat(["Total"]);
+
         headers.forEach((h, idx) => {
             const th = document.createElement("th");
             th.textContent = h;
@@ -2153,7 +2165,7 @@ export function renderConsolidatedTaxSummary(data) {
         table.appendChild(thead);
 
         const tbody = document.createElement("tbody");
-        const quarters = ["q1", "q2", "q3", "q4", "q5", "total"];
+        const quarters = fQuarterKeys.concat(["total"]);
 
         function appendRow(label, quartersData, color) {
             if (!quartersData) return;

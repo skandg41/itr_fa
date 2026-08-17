@@ -23,15 +23,16 @@ def api_consolidated_tax_summary():
         username = data.get("username", "Default")
         current_portfolio = data.get("current_portfolio")
         sbi_tt_mode = data.get("sbi_tt_mode", "split")
+        year_basis = data.get("year_basis", "fy")
 
         if not fy_start_year:
             return jsonify({"error": "fy_start_year required"}), 400
-        
+
         fyStartYear = int(fy_start_year)
 
         user_dir, _ = get_user_dir(username)
 
-        def load_cy_summary(year):
+        def load_cy_summary(year, basis="fy"):
             portfolio = None
             if current_portfolio and current_portfolio.get("calendar_year") == year:
                 portfolio = current_portfolio
@@ -76,36 +77,64 @@ def api_consolidated_tax_summary():
                                     "amount": fd["amount"],
                                     "is_manual": False
                                 })
-                return calculate_tax_year_summary(portfolio, mode=sbi_tt_mode)
+                return calculate_tax_year_summary(portfolio, mode=sbi_tt_mode, year_basis=basis)
             return None
 
-        # Load both years
-        cy_start_res = load_cy_summary(fyStartYear)
-        cy_end_res = load_cy_summary(fyStartYear + 1)
+        if year_basis == "cy":
+            # Calendar-year mode: a single anchor year, no prev/curr split needed.
+            cy_res = load_cy_summary(fyStartYear, basis="cy")
+        else:
+            # Load both years
+            cy_start_res = load_cy_summary(fyStartYear, basis="fy")
+            cy_end_res = load_cy_summary(fyStartYear + 1, basis="fy")
 
         # Consolidated structure
-        consolidated = {
-            "fy_label": f"Apr {fyStartYear} – Mar {fyStartYear + 1}",
-            "fy_start_year": fyStartYear,
-            "fy_end_year": fyStartYear + 1,
-            "has_cy_start": cy_start_res is not None,
-            "has_cy_end": cy_end_res is not None,
-            "stocks": {},
-            "totals": {
-                "ltcg": {"total": 0, "q1": 0, "q2": 0, "q3": 0, "q4": 0, "q5": 0},
-                "ltcl": {"total": 0, "q1": 0, "q2": 0, "q3": 0, "q4": 0, "q5": 0},
-                "stcg": {"total": 0, "q1": 0, "q2": 0, "q3": 0, "q4": 0, "q5": 0},
-                "stcl": {"total": 0, "q1": 0, "q2": 0, "q3": 0, "q4": 0, "q5": 0},
-                "dividends": {"total": 0, "q1": 0, "q2": 0, "q3": 0, "q4": 0, "q5": 0},
-            },
-            "total_proceeds_inr": 0,
-            "total_cost_acquisition_inr": 0,
-            "st_proceeds_inr": 0,
-            "st_cost_inr": 0,
-            "lt_proceeds_inr": 0,
-            "lt_cost_inr": 0,
-            "errors": []
-        }
+        if year_basis == "cy":
+            consolidated = {
+                "fy_label": f"Jan {fyStartYear} – Dec {fyStartYear}",
+                "fy_start_year": fyStartYear,
+                "fy_end_year": fyStartYear,
+                "has_cy_start": cy_res is not None,
+                "has_cy_end": cy_res is not None,
+                "stocks": {},
+                "totals": {
+                    "ltcg": {"total": 0, "q1": 0, "q2": 0, "q3": 0, "q4": 0, "q5": 0},
+                    "ltcl": {"total": 0, "q1": 0, "q2": 0, "q3": 0, "q4": 0, "q5": 0},
+                    "stcg": {"total": 0, "q1": 0, "q2": 0, "q3": 0, "q4": 0, "q5": 0},
+                    "stcl": {"total": 0, "q1": 0, "q2": 0, "q3": 0, "q4": 0, "q5": 0},
+                    "dividends": {"total": 0, "q1": 0, "q2": 0, "q3": 0, "q4": 0, "q5": 0},
+                },
+                "total_proceeds_inr": 0,
+                "total_cost_acquisition_inr": 0,
+                "st_proceeds_inr": 0,
+                "st_cost_inr": 0,
+                "lt_proceeds_inr": 0,
+                "lt_cost_inr": 0,
+                "errors": []
+            }
+        else:
+            consolidated = {
+                "fy_label": f"Apr {fyStartYear} – Mar {fyStartYear + 1}",
+                "fy_start_year": fyStartYear,
+                "fy_end_year": fyStartYear + 1,
+                "has_cy_start": cy_start_res is not None,
+                "has_cy_end": cy_end_res is not None,
+                "stocks": {},
+                "totals": {
+                    "ltcg": {"total": 0, "q1": 0, "q2": 0, "q3": 0, "q4": 0, "q5": 0},
+                    "ltcl": {"total": 0, "q1": 0, "q2": 0, "q3": 0, "q4": 0, "q5": 0},
+                    "stcg": {"total": 0, "q1": 0, "q2": 0, "q3": 0, "q4": 0, "q5": 0},
+                    "stcl": {"total": 0, "q1": 0, "q2": 0, "q3": 0, "q4": 0, "q5": 0},
+                    "dividends": {"total": 0, "q1": 0, "q2": 0, "q3": 0, "q4": 0, "q5": 0},
+                },
+                "total_proceeds_inr": 0,
+                "total_cost_acquisition_inr": 0,
+                "st_proceeds_inr": 0,
+                "st_cost_inr": 0,
+                "lt_proceeds_inr": 0,
+                "lt_cost_inr": 0,
+                "errors": []
+            }
 
         def merge_ty(source_ty):
             # Merge stocks
@@ -135,23 +164,31 @@ def api_consolidated_tax_summary():
             consolidated["lt_proceeds_inr"] += source_ty.get("lt_proceeds_inr", 0)
             consolidated["lt_cost_inr"] += source_ty.get("lt_cost_inr", 0)
 
-        if cy_start_res:
-            merge_ty(cy_start_res["tax_years"]["curr"])
-            consolidated["errors"].extend(cy_start_res.get("errors", []))
-        if cy_end_res:
-            merge_ty(cy_end_res["tax_years"]["prev"])
-            consolidated["errors"].extend(cy_end_res.get("errors", []))
+        if year_basis == "cy":
+            if cy_res:
+                merge_ty(cy_res["tax_years"]["cy"])
+                consolidated["errors"].extend(cy_res.get("errors", []))
+        else:
+            if cy_start_res:
+                merge_ty(cy_start_res["tax_years"]["curr"])
+                consolidated["errors"].extend(cy_start_res.get("errors", []))
+            if cy_end_res:
+                merge_ty(cy_end_res["tax_years"]["prev"])
+                consolidated["errors"].extend(cy_end_res.get("errors", []))
 
         # Unique errors
         consolidated["errors"] = sorted(list(set(consolidated["errors"])))
 
         # Re-run offset logic on consolidated data
         from core.calculator import compute_offset_summary
-        wrapped = {"prev": consolidated, "curr": {"totals": {
-            "ltcg": {"total": 0}, "ltcl": {"total": 0}, "stcg": {"total": 0}, "stcl": {"total": 0}
-        }}}
-        compute_offset_summary(wrapped)
-        
+        if year_basis == "cy":
+            compute_offset_summary({"cy": consolidated})
+        else:
+            wrapped = {"prev": consolidated, "curr": {"totals": {
+                "ltcg": {"total": 0}, "ltcl": {"total": 0}, "stcg": {"total": 0}, "stcl": {"total": 0}
+            }}}
+            compute_offset_summary(wrapped)
+
         return jsonify({"success": True, "consolidated": consolidated})
     except Exception as e:
         logger.exception("Consolidated tax summary error")
@@ -180,7 +217,8 @@ def api_tax_year_summary():
         return jsonify({"error": "Data required"}), 400
     try:
         mode = data.get("sbi_tt_mode", "split")
-        result = calculate_tax_year_summary(data, mode=mode)
+        year_basis = data.get("year_basis", "fy")
+        result = calculate_tax_year_summary(data, mode=mode, year_basis=year_basis)
         return jsonify({"success": True, **result})
     except Exception as e:
         logger.exception("Tax year summary error")
